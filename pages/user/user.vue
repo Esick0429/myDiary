@@ -37,7 +37,7 @@
 						console.log(res)
 						let code = res.code
 						uni.request({
-							url: 'https://esick.xyz/wxapi/getSession',
+							url: 'https://api.esick.work/wxapi/getSession',
 							data: {
 								code: code
 							},

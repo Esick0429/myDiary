@@ -1,6 +1,6 @@
 <template>
 	<view class="content">
-		<view class="title" @click="getDiary()">
+		<view class="title">
 			<u--text type="primary" :text="title" class="title" bold="true" size="32"></u--text>
 		</view>
 		<u-gap height="30" bgColor="#bbb"></u-gap>
@@ -13,7 +13,7 @@
 			<view class="section_top" style="margin-bottom:20px">
 				<view class="btn_left item" @click="openCalendar()">
 					<u--image src="/static/clock.png" width="80" height="80"></u--image>
-					<u--text text="时间选择器"></u--text>
+					<u--text text="时间搜索器"></u--text>
 				</view>
 				<u-line direction="col" color="1296db" length="160rpx"></u-line>
 				<view class="btn_right item" @click="openWrite()">
@@ -22,29 +22,22 @@
 				</view>
 			</view>
 			<u-gap height="30" bgColor="#f8f8f8"></u-gap>
-			<view style="height: 800px;">
-				<scroll-view :style="{'height':'100%'}" scroll-y="true" refresher-enabled="false"
-					:refresher-triggered="triggered" :refresher-threshold="45"
-					@refresherrefresh="onRefresh" @refresherrestore="onRestore">
-						<view v-if="diaryData.length > 0" >
-							<u-list >
-								<u-list-item v-for="(item, index) in diaryData" :key="item.id">
-									<view class="listItem" @click="changeDiary(item)">
-										<view class="listTitle">
-											<u--text :text="item.title" bold="true" size="21"></u--text>
-											<u--text mode="date" :text="item.date" size="12"></u--text>
-										</view>
-										<view class="listContent">
-											<u--text :text="item.content" lines="3"></u--text>
-										</view>
-										<u-gap height="8" bgColor="#f8f8f8" marginTop="35"></u-gap>
-									</view>
-								</u-list-item>
-							</u-list>
+			<view class="" style="height: 700px;">
+				<z-paging :fixed="false" height='100%' ref="paging" v-model="diaryData" @query="queryList" show-refresher-update-time="true">
+						<view v-for="(item, index) in diaryData" :key="item.id">
+							<view class="listItem" @click="changeDiary(item)">
+								<view class="listTitle">
+									<u--text :text="item.title" bold="true" size="21"></u--text>
+									<u--text mode="date" :text="item.date" size="12"></u--text>
+								</view>
+								<view class="listContent">
+									<u--text :text="item.content" lines="3"></u--text>
+								</view>
+							</view>
+							<u-gap height="8" bgColor="#f8f8f8"></u-gap>
 						</view>
-				</scroll-view>
+				</z-paging>
 			</view>
-			<u--text text="从今天开始记录美好的一天吧~" v-if="diaryData.length === 0"></u--text>
 		</view>
 		<u-popup :show="showpopup" mode="center" @close="close">
 			<view class="popup">
@@ -131,46 +124,44 @@
 				userName: uni.getStorageSync('userInfo').nickName,
 				scrollTop: 0,
 				triggered: false,
-				// _freshing:true
-
+				firstTime: '',
+				endTime: ''
 			}
 		},
 		onLoad() {
-			this._freshing = false;
-			setTimeout(() => {
-				this.triggered = true;
-			}, 1000)
 		},
 		onShow() {
 			this.userName = uni.getStorageSync('userInfo').nickName
-			this.getDiary()
+			if (this.userName) {
+				console.log(this.userName)
+				this.$refs.paging.reload(true)
+			}
 		},
-
 		methods: {
-			select(value) {
-				console.log(typeof value)
-				let userName = this.userName
-				uni.request({
-					url: `https://esick.xyz/wxapi/getDiary`,
-					data: {
-						userName: userName,
-						title: value
-					},
-					success: (res) => {
-						this.diaryData = res.data.results;
-					}
-				});
+			select() {
+				this.$refs.paging.reload(true)
 			},
-			getDiary() {
+			queryList(pageNo, pageSize) {
+				//这里的pageNo和pageSize会自动计算好，直接传给服务器即可
+				//这里的请求只是演示，请替换成自己的项目的网络请求，请在网络请求回调中
+				//通过this.$refs.paging.complete(请求回来的数组);将请求结果传给z-paging
 				let userName = this.userName
 				uni.request({
-					url: `https://esick.xyz/wxapi/getDiary`,
+					url: `https://api.esick.work/wxapi/getDiary`,
 					data: {
 						userName: userName,
+						title: this.selectValue,
+						today: this.firstTime,
+						lastday: this.endTime,
 					},
 					success: (res) => {
-						console.log(res.data);
-						this.diaryData = res.data.results;
+						this.$refs.paging.complete(res.data.results)
+						this.firstTime = ''
+						this.endTime = ''
+					},
+					fail: (err) => {
+						console.log(err)
+						this.$refs.paging.complete(false)
 					}
 				});
 			},
@@ -189,6 +180,41 @@
 					this.showpopup = true
 				}
 			},
+			writeDiary: debounce(function() {
+				this.$refs.form1.validate().then(res => {
+					uni.$u.toast('校验通过')
+					let userName = this.userName
+					let url = ''
+					if (this.flag === 1) {
+						url = 'https://api.esick.work/wxapi/updateDiary'
+
+					} else {
+						url = 'https://api.esick.work/wxapi/addDiary'
+					}
+					uni.request({
+						url: url,
+						method: 'POST',
+						data: {
+							userName: userName,
+							title: this.model1.diaryTitle,
+							content: this.model1.diaryValue,
+							date: new Date(this.model1.diaryDate).getTime(),
+							id: this.model1.diaryId
+						},
+						success: (res) => {
+							if (res.data.status === 1) {
+								uni.$u.toast('修改失败')
+								return
+							}
+							this.close()
+							this.$refs.paging.reload()
+						}
+					})
+				}).catch(errors => {
+					uni.$u.toast('校验失败')
+				})
+
+			}, 300),
 			close() {
 				this.showpopup = false
 				this.model1.diaryTitle = ''
@@ -205,41 +231,6 @@
 				this.flag = 1
 				this.showpopup = true
 			},
-			writeDiary: debounce(function() {
-				this.$refs.form1.validate().then(res => {
-					uni.$u.toast('校验通过')
-					let userName = this.userName
-					let url = ''
-					if (this.flag === 1) {
-						url = 'https://esick.xyz/wxapi/updateDiary'
-
-					} else {
-						url = 'https://esick.xyz/wxapi/addDiary'
-					}
-					uni.request({
-						url: url,
-						method: 'POST',
-						data: {
-							userName: userName,
-							title: this.model1.diaryTitle,
-							content: this.model1.diaryValue,
-							date: new Date(this.model1.diaryDate).getTime(),
-							id: this.model1.diaryId
-						},
-						success: (res) => {
-							if (res.data.status === 1) {
-								uni.$u.toast('校验失败')
-								return
-							}
-							this.close()
-							this.getDiary()
-						}
-					})
-				}).catch(errors => {
-					uni.$u.toast('校验失败')
-				})
-
-			}, 300),
 			diaryDateClose() {
 				this.showDate = false
 				this.$refs.form1.validateField('diaryDate')
@@ -254,55 +245,29 @@
 			},
 			selectDiaryTime(e) {
 				this.showCalendar = false
-				console.log(this.selectValue)
-				let userName = this.userName
-				let timeRange = [new Date(e[0]).getTime(), new Date(e[e.length - 1]).getTime()]
-				uni.request({
-					url: `https://esick.xyz/wxapi/getDiary`,
-					data: {
-						userName: userName,
-						today: timeRange[0],
-						lastday: timeRange[1],
-						title: this.selectValue
-					},
-					success: (res) => {
-						console.log(res.data);
-						this.diaryData = res.data.results;
-					}
-				})
+				this.firstTime = new Date(e[0]).getTime()
+				this.endTime = new Date(e[e.length - 1]).getTime()
+				this.$refs.paging.reload(true)
 			},
 			deleteDiary: debounce(function(e) {
 				const userName = this.userName
 				uni.request({
-					url: 'https://esick.xyz/wxapi/deleteDiary',
+					url: 'https://api.esick.work/wxapi/deleteDiary',
 					method: 'POST',
 					data: {
 						userName: userName,
 						id: e
 					},
 					success: (res) => {
-						console.log(res)
-						this.getDiary()
+						this.close()
 						this.showpopup = false
+						uni.$u.toast('删除成功')
+						this.$refs.paging.reload()
 					}
 				})
 			}, 500),
-
 			hideKeyboard() {
 				uni.hideKeyboard()
-			},
-			onRefresh() {
-				if (this._freshing) return;
-				this._freshing = true;
-				if (!this.triggered) //界面下拉触发，triggered可能不是true，要设为true  
-					this.triggered = true;
-				setTimeout(() => {
-					this.triggered = false; //触发onRestore，并关闭刷新图标  
-					this._freshing = false;
-				}, 1000)
-			},
-			onRestore() {
-				this.getDiary()
 			},
 			onPageScroll(e) {
 				this.scrollTop = e.scrollTop;
